@@ -149,11 +149,9 @@ namespace palla {
                         // Change the state to available and notify the caller.
                         assert(m_state == state::working || m_state == state::initializing);
                         m_state = state::available;
-                        lock.unlock();
                         m_wake_up.notify_all();
 
                         // Wait until the state changes.
-                        lock.lock();
                         m_wake_up.wait(lock, [this] { return m_state != state::available; });
 
                         // If we need to exit, do it now.
@@ -171,7 +169,12 @@ namespace palla {
                 // Public functions.
 
                 // Constructor.
-                worker_thread() : m_thread(&worker_thread::loop, this) {}
+                worker_thread() : m_thread(&worker_thread::loop, this) {
+
+                    // Wait until the thread become available.
+                    std::unique_lock lock(m_mutex);
+                    m_wake_up.wait(lock, [this]() { return m_state == state::available; });
+                }
 
                 // Destructor.
                 ~worker_thread() {
