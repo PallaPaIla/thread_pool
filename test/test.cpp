@@ -2,15 +2,16 @@
 #include <iostream>
 #include <numeric>
 #include <random>
+#include <chrono>
 
 #include "../palla/thread_pool.h"
 
 // Console color codes.
 namespace colors {
-    static const char* const white = "\033[0m";
-    static const char* const green = "\033[92m";
-    static const char* const yellow = "\033[93m";
-    static const char* const red = "\033[91m";
+    static const char* const white =    "\033[0m";
+    static const char* const green =    "\033[92m";
+    static const char* const yellow =   "\033[93m";
+    static const char* const red =      "\033[91m";
 }
 
 // Utility function to terminate the test.
@@ -23,12 +24,12 @@ void make_test_fail(const char* text) {
 void dummy_void(size_t) {}
 int dummy_int(size_t) { return 0; }
 
-static_assert(std::is_void_v<decltype(palla::thread_pool::get().reserve(8).dispatch_to_all(&dummy_void))>, "Incorrect dispatch return type.");
+static_assert(std::is_void_v<decltype(palla::thread_pool::get().reserve(8).dispatch_to_all(&dummy_void))>,          "Incorrect dispatch return type.");
 static_assert(std::is_void_v<decltype(palla::thread_pool::get().reserve(8).dispatch_to_at_least_one(&dummy_void))>, "Incorrect dispatch return type.");
-static_assert(std::is_void_v<decltype(palla::thread_pool::get().reserve(8).dispatch_to_reserved(&dummy_void))>, "Incorrect dispatch return type.");
-static_assert(!std::is_void_v<decltype(palla::thread_pool::get().reserve(8).dispatch_to_all(&dummy_int))>, "Incorrect dispatch return type.");
+static_assert(std::is_void_v<decltype(palla::thread_pool::get().reserve(8).dispatch_to_reserved(&dummy_void))>,     "Incorrect dispatch return type.");
+static_assert(!std::is_void_v<decltype(palla::thread_pool::get().reserve(8).dispatch_to_all(&dummy_int))>,          "Incorrect dispatch return type.");
 static_assert(!std::is_void_v<decltype(palla::thread_pool::get().reserve(8).dispatch_to_at_least_one(&dummy_int))>, "Incorrect dispatch return type.");
-static_assert(!std::is_void_v<decltype(palla::thread_pool::get().reserve(8).dispatch_to_reserved(&dummy_int))>, "Incorrect dispatch return type.");
+static_assert(!std::is_void_v<decltype(palla::thread_pool::get().reserve(8).dispatch_to_reserved(&dummy_int))>,     "Incorrect dispatch return type.");
 
 static_assert(!std::is_copy_constructible_v<palla::thread_pool> &&
               !std::is_copy_assignable_v<palla::thread_pool> &&
@@ -194,68 +195,118 @@ void test_functionality() {
     std::cout << colors::green << "PASS              " << colors::white;
 }
 
+void verify_concurrency(size_t nb_threads_in_pool, size_t nb_threads_desired, std::chrono::duration<double> time_to_sleep) {
 
+    auto& pool = palla::thread_pool::get();
 
-// A thread-safe random function since rand() is not garanteed to be thread-safe.
-int thread_safe_random(int start, int end) {
-    static std::atomic<int> seed = 42;
-    thread_local std::minstd_rand rand(seed++);
-    return std::uniform_int_distribution(start, end)(rand);
+    pool.resize(nb_threads_in_pool);
+
+    auto start = std::chrono::steady_clock::now();
+
+    pool.reserve(nb_threads_desired).dispatch_to_all([time_to_sleep](size_t) {
+        std::this_thread::sleep_for(time_to_sleep);
+    });
+
+    auto end = std::chrono::steady_clock::now();
+
+    auto expected_time = std::ceil((double)nb_threads_desired / nb_threads_in_pool) * time_to_sleep;
+    auto actual_time = end - start;
+    if (abs(expected_time - actual_time) > expected_time * 0.1)
+        make_test_fail("The pool is not concurrent.");
+
 }
 
+// Test that pool is actually concurrent.
+void test_concurrency() {
+    std::cout << "\nTesting concurrency.\n" << colors::yellow << "TESTING..." << colors::white << '\r';
+
+    verify_concurrency(4, 2, std::chrono::milliseconds(200));
+    verify_concurrency(4, 4, std::chrono::milliseconds(200));
+    verify_concurrency(4, 6, std::chrono::milliseconds(200));
+    verify_concurrency(8, 100, std::chrono::milliseconds(100));
+
+    std::cout << colors::green << "PASS              " << colors::white;
+}
+
+
+
+
 // Sleeps for a random time in microseconds.
-void sleep_random_us(int min, int max) {
-    auto sleep_time_us = thread_safe_random(min, max);
-    if (sleep_time_us > 0)
-        std::this_thread::sleep_for(std::chrono::microseconds(sleep_time_us));
+void sleep_random_us(int us) {
+    if (us > 0)
+        std::this_thread::sleep_for(std::chrono::microseconds(us));
 }
 
 // Makes various thread_pool calls recursively up to a certain depth.
-void recursive_call(size_t remaining_recursions) {
+void recursive_call(std::chrono::time_point<std::chrono::steady_clock> until, size_t max_depth) {
 
-    if (remaining_recursions == 0)
+    auto time = std::chrono::steady_clock::now();
+    if (time > until || max_depth < 0)
         return;
 
     auto& pool = palla::thread_pool::get();
 
-    const int sleep_time_max = 20; // In microseconds.
-    auto recurse = [remaining_recursions](size_t) { recursive_call(remaining_recursions - 1); };
+    auto recurse = [until, max_depth](size_t) { recursive_call(until, max_depth - 1); };
 
-    // Do various calls.
-    sleep_random_us(0, sleep_time_max);
-    (void)pool.size();
-    sleep_random_us(0, sleep_time_max);
-    (void)pool.empty();
-    sleep_random_us(0, sleep_time_max);
-    (void)pool.nb_available();
-    sleep_random_us(0, sleep_time_max);
-    (void)pool.nb_working();
-    sleep_random_us(0, sleep_time_max);
-    (void)pool.is_worker();
-    sleep_random_us(0, sleep_time_max);
-    pool.resize(thread_safe_random(0, 12));
-    sleep_random_us(0, sleep_time_max);
-    (void)pool.reserve(thread_safe_random(0, 4));
-    sleep_random_us(0, sleep_time_max);
-    auto sub_pool = pool.reserve(thread_safe_random(0, 4));
-    sleep_random_us(0, sleep_time_max);
-    sub_pool.dispatch_to_all(recurse);
-    sleep_random_us(0, sleep_time_max);
-    sub_pool.dispatch_to_at_least_one(recurse);
-    sleep_random_us(0, sleep_time_max);
-    sub_pool.dispatch_to_reserved(recurse);
-    sleep_random_us(0, sleep_time_max);
+    constexpr int SLEEP_TIME_MAX = 1; // In microseconds.
+    std::minstd_rand rand((std::uint32_t)time.time_since_epoch().count());
+    auto sleep_rand = [&rand]() mutable {
+        int us = std::uniform_int_distribution(0, SLEEP_TIME_MAX)(rand);
+        if (us > 0)
+            std::this_thread::sleep_for(std::chrono::microseconds(us));
+    };
+
+    do {
+        // Do various calls.
+        sleep_rand();
+        (void)pool.size();
+        sleep_rand();
+        (void)pool.empty();
+        sleep_rand();
+        (void)pool.nb_available();
+        sleep_rand();
+        (void)pool.nb_working();
+        sleep_rand();
+        (void)pool.is_worker();
+        sleep_rand();
+        pool.resize(std::uniform_int_distribution(0, 12)(rand));
+        sleep_rand();
+        (void)pool.reserve(std::uniform_int_distribution(0, 4)(rand));
+        sleep_rand();
+        auto sub_pool = pool.reserve(std::uniform_int_distribution(0, 4)(rand));
+        sleep_rand();
+        sub_pool.dispatch_to_all(recurse);
+        sleep_rand();
+        sub_pool.dispatch_to_at_least_one(recurse);
+        sleep_rand();
+        sub_pool.dispatch_to_reserved(recurse);
+        sleep_rand();
+    } while (std::chrono::steady_clock::now() < until);
+
+
 }
 
 
 // Test that there are no deadlocks.
 void test_deadlocks() {
 
-    std::cout << "\nTesting for deadlocks.\n" << colors::yellow << "TESTING..." << colors::white << "  if this text stays up for 30s+ a deadlock has occurred.\r";
+    std::cout << "\nTesting for deadlocks.\n" << colors::yellow;
 
-    recursive_call(3);
+    constexpr size_t TEST_TIME_SECONDS = 10;
+    const auto start_time = std::chrono::steady_clock::now();
 
-    std::cout << colors::green << "PASS                                                                                  " << colors::white;
+    auto future = std::async([start_time]() {
+        for (size_t i = 0; i <= TEST_TIME_SECONDS; i++) {
+            std::cout << "TESTING for " << std::chrono::seconds(TEST_TIME_SECONDS - i) << "..\r";
+            std::this_thread::sleep_until(start_time + std::chrono::seconds(i));
+        }
+        std::cout << "DONE                               \r";
+    });
+
+
+    recursive_call(start_time + std::chrono::seconds(TEST_TIME_SECONDS), 3);
+
+    std::cout << colors::green << "PASS" << colors::white;
 }
 
 
@@ -264,6 +315,7 @@ void test_deadlocks() {
 int main() {
 
     test_functionality();
+    test_concurrency();
     test_deadlocks();
 
 
