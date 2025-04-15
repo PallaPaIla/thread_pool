@@ -21,8 +21,8 @@ void make_test_fail(const char* text) {
 }
 
 // Various static asserts.
-void dummy_void(size_t) {}
-int dummy_int(size_t) { return 0; }
+void dummy_void(int) {}
+int dummy_int(int) { return 0; }
 
 static_assert(std::is_void_v<decltype(palla::thread_pool::get().reserve(8).dispatch_to_all(&dummy_void))>,          "Incorrect dispatch return type.");
 static_assert(std::is_void_v<decltype(palla::thread_pool::get().reserve(8).dispatch_to_at_least_one(&dummy_void))>, "Incorrect dispatch return type.");
@@ -42,6 +42,13 @@ static_assert(!std::is_copy_constructible_v<palla::thread_pool::sub_pool> &&
               std::is_move_assignable_v<palla::thread_pool::sub_pool>&&
               std::is_move_assignable_v<palla::thread_pool::sub_pool>, 
     "sub_pool should be movable but not copyable.");
+
+
+enum class dispatch_func {
+    dispatch_to_reserved,
+    dispatch_to_at_least_one,
+    dispatch_to_all
+};
 
 // Verifies the size of a pool.
 void verify_pool(size_t expected_size, size_t expected_working, bool is_worker) {
@@ -79,12 +86,6 @@ void verify_sub_pool(palla::thread_pool::sub_pool& sub_pool, size_t desired_size
         make_test_fail("Incorrect sub_pool::full().");
 
     // Test dispatch functions.
-    enum class dispatch_func {
-        dispatch_to_reserved,
-        dispatch_to_at_least_one,
-        dispatch_to_all
-    };
-
     auto test_dispatch = [&sub_pool](dispatch_func dispatch_func, size_t expected_size) {
 
         // Check that each thread is visited exactly once.
@@ -127,7 +128,7 @@ void test_functionality() {
     // is_worker().
     if (pool.is_worker())
         make_test_fail("Incorrect thread_pool::is_worker().");
-    if (!pool.reserve(1).dispatch_to_reserved([](size_t) { return palla::thread_pool::get().is_worker(); })[0])
+    if (!pool.reserve(1).dispatch_to_reserved([](int) { return palla::thread_pool::get().is_worker(); })[0])
         make_test_fail("Incorrect thread_pool::is_worker().");
 
     // Test enabling and disabling with various sub pool sizes.
@@ -195,31 +196,43 @@ void test_functionality() {
     std::cout << colors::green << "PASS              " << colors::white;
 }
 
+
+
+// Time several threads and ensure we arrive at the expected time.
 void verify_concurrency(size_t nb_threads_in_pool, size_t nb_threads_desired, std::chrono::duration<double> time_to_sleep) {
 
-    auto& pool = palla::thread_pool::get();
+    auto func = [time_to_sleep](int) { std::this_thread::sleep_for(time_to_sleep); };
 
+    auto& pool = palla::thread_pool::get();
     pool.resize(nb_threads_in_pool);
 
-    auto start = std::chrono::steady_clock::now();
+    auto sub_pool = pool.reserve(nb_threads_desired);
 
-    pool.reserve(nb_threads_desired).dispatch_to_all([time_to_sleep](size_t) {
-        std::this_thread::sleep_for(time_to_sleep);
-    });
+    auto test_dispatch = [&](dispatch_func dispatch_func, std::chrono::duration<double> expected_time) {
 
-    auto end = std::chrono::steady_clock::now();
+        auto start = std::chrono::steady_clock::now();
+        switch (dispatch_func) {
+        case dispatch_func::dispatch_to_reserved:      sub_pool.dispatch_to_reserved(func);      break;
+        case dispatch_func::dispatch_to_at_least_one:  sub_pool.dispatch_to_at_least_one(func);  break;
+        case dispatch_func::dispatch_to_all:           sub_pool.dispatch_to_all(func);           break;
+        }
+        auto end = std::chrono::steady_clock::now();
+        auto actual_time = end - start;
+        if (abs(expected_time - actual_time) > std::max(expected_time, time_to_sleep) * 0.2)
+            make_test_fail("The pool is not concurrent.");
+    };
 
-    auto expected_time = std::ceil((double)nb_threads_desired / nb_threads_in_pool) * time_to_sleep;
-    auto actual_time = end - start;
-    if (abs(expected_time - actual_time) > expected_time * 0.1)
-        make_test_fail("The pool is not concurrent.");
+    test_dispatch(dispatch_func::dispatch_to_reserved, sub_pool.empty() ? std::chrono::seconds(0) : time_to_sleep);
+    test_dispatch(dispatch_func::dispatch_to_at_least_one, time_to_sleep);
+    test_dispatch(dispatch_func::dispatch_to_all, std::ceil((double)sub_pool.desired_size() / sub_pool.size()) * time_to_sleep);
 
 }
 
-// Test that pool is actually concurrent.
+// Test that the pool actually uses multiple threads and is not just a singlethreaded loop.
 void test_concurrency() {
     std::cout << "\nTesting concurrency.\n" << colors::yellow << "TESTING..." << colors::white << '\r';
 
+    verify_concurrency(0, 2, std::chrono::milliseconds(200));
     verify_concurrency(4, 2, std::chrono::milliseconds(200));
     verify_concurrency(4, 4, std::chrono::milliseconds(200));
     verify_concurrency(4, 6, std::chrono::milliseconds(200));
@@ -227,7 +240,6 @@ void test_concurrency() {
 
     std::cout << colors::green << "PASS              " << colors::white;
 }
-
 
 
 
@@ -246,7 +258,7 @@ void recursive_call(std::chrono::time_point<std::chrono::steady_clock> until, si
 
     auto& pool = palla::thread_pool::get();
 
-    auto recurse = [until, max_depth](size_t) { recursive_call(until, max_depth - 1); };
+    auto recurse = [until, max_depth](int) { recursive_call(until, max_depth - 1); };
 
     constexpr int SLEEP_TIME_MAX = 1; // In microseconds.
     std::minstd_rand rand((std::uint32_t)time.time_since_epoch().count());
@@ -283,9 +295,7 @@ void recursive_call(std::chrono::time_point<std::chrono::steady_clock> until, si
         sleep_rand();
     } while (std::chrono::steady_clock::now() < until);
 
-
 }
-
 
 // Test that there are no deadlocks.
 void test_deadlocks() {
