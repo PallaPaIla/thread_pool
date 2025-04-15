@@ -4,7 +4,7 @@
 #include <random>
 #include <chrono>
 
-#include "../palla/thread_pool.h"
+#include "../header/thread_pool.h"
 
 // Console color codes.
 namespace colors {

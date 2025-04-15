@@ -4,7 +4,7 @@ A simple header-only thread pool for multithreading.
 
 ## Installation and requirements
 
-Copy `palla/thread_pool.h` and include it. Requires C++ 20, but is mostly compatible with C++17 barring `std::span`.
+Copy `header/thread_pool.h` and include it. Requires C++ 20, but is mostly compatible with C++17 barring `std::span`.
 
 ## Basic usage
 
@@ -35,7 +35,7 @@ Both the main pool and sub pools have various self-explanatory getters like `siz
 
 The thread pool fully supports recursion.
 ```c++
-#include "palla/thread_pool.h"
+#include "thread_pool.h"
 
 // A recursive fibonacci implementation using multiple threads.
 int fibonacci(int val) {
@@ -67,7 +67,7 @@ By default the thread pool starts with one thread per logical core. For example 
 The changes take effect immediately on available threads in the main pool, but threads owned by sub pools are only affected when they return to the main pool.
 
 ```c++
-#include "palla/thread_pool.h"
+#include "thread_pool.h"
 
 // Give the pool 8 threads for this example.
 auto& pool = palla::thread_pool::get();
