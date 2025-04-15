@@ -14,7 +14,6 @@ namespace palla {
         namespace thread_pool_namespace {
 
 
-
             // Hack while waiting for std::move_only_function.
 
             // Generic template so we can specialize it.
@@ -24,7 +23,6 @@ namespace palla {
             // Partial specialization for function types.
             template<class R, class... Ts>
             class move_only_function<R(Ts...)> {
-
             private:
                 // Private types.
 
@@ -42,10 +40,8 @@ namespace palla {
                     T m_func;
                 };
 
-
                 // Private members.
                 std::unique_ptr<callable> m_ptr;    // Holds the function. We could use SBO to optimize the case when sizeof(T) <= sizeof(unique_ptr), but this seems hard.
-
 
             public:
                 // Public functions. Basically the same api as std::function.
@@ -66,12 +62,10 @@ namespace palla {
             };
 
 
-
             // Singleton CRTP base class.
             // The singleton can be accessed by T::get().
             template<class T>
             class singleton {
-
             public:
                 static T& get() {
                     static T instance;
@@ -88,12 +82,10 @@ namespace palla {
             };
 
 
-
             // Returns an async function with signature void() and its future which will be filled once the function completes.
             // The function arguments are copied, not moved.
             template<class F, class... Ts, class R = std::decay_t<decltype(std::declval<F>()(std::declval<Ts>()...))>>
             [[nodiscard]] auto make_async_func(F&& func, Ts... args) {
-
                 struct {
                     move_only_function<void()> async_func;
                     std::future<R> future;
@@ -114,11 +106,8 @@ namespace palla {
             }
 
 
-
-
             // A thread that runs in an infinite loop until it is destroyed.
             class worker_thread {
-
             private:
                 // Private types.
 
@@ -130,7 +119,6 @@ namespace palla {
                     exiting                             // State when terminate() has been called.
                 };
 
-
                 // Private members.
                 std::thread m_thread;                   // The thread itself.                   
                 std::mutex m_mutex;                     // Used to lock the thread to give it work.
@@ -138,15 +126,12 @@ namespace palla {
                 move_only_function<void()> m_func;      // The user function to execute.
                 state m_state = state::initializing;    // The state we are in.
 
-
                 // Private functions.
 
                 // Infinite loop.
                 void loop() {
-
                     std::unique_lock lock(m_mutex);
                     while (true) {
-
                         // Change the state to available and notify the caller.
                         assert(m_state == state::working || m_state == state::initializing);
                         m_state = state::available;
@@ -165,13 +150,11 @@ namespace palla {
                     }
                 }
 
-
             public:
                 // Public functions.
 
                 // Constructor.
                 worker_thread() : m_thread(&worker_thread::loop, this) {
-
                     // Wait until the thread become available.
                     std::unique_lock lock(m_mutex);
                     m_wake_up.wait(lock, [this]() { return m_state == state::available; });
@@ -189,7 +172,6 @@ namespace palla {
 
                 // Send a function to this thread.
                 void give_work(move_only_function<void()> func) {
-
                     // Wait until the thread become available.
                     std::unique_lock lock(m_mutex);
                     m_wake_up.wait(lock, [this]() { return m_state == state::available; });
@@ -205,7 +187,6 @@ namespace palla {
 
                 // Intentional termination function.
                 void terminate() {
-
                     // Wait until the thread is not working.
                     std::unique_lock lock(m_mutex);
                     m_wake_up.wait(lock, [this]() { return m_state == state::available || m_state == state::exiting; });
@@ -220,10 +201,8 @@ namespace palla {
             };
 
 
-
             // A pool of worker threads.
             class thread_pool : public singleton<thread_pool> {
-
             private:
                 // Private members.
                 std::vector<std::unique_ptr<worker_thread>> m_all_workers;  // All the workers, be they owned by this or by sub pools.
@@ -231,7 +210,6 @@ namespace palla {
                 size_t m_desired_size = 0;                                  // The number of workers we are striving forward (required in case a sub pool owns the workers).
                 size_t m_prev_size = 0;                                     // The previous size before disable() was called. The pool will be resized to this when enable() is called.
                 mutable std::shared_mutex m_mutex;                          // A mutex for read/write locks.
-
 
                 // Private functions.
                 // Non thread-safe functions are marked by the suffix _unsafe.
@@ -253,10 +231,8 @@ namespace palla {
                     receive_workers_unsafe(workers);
                 }
                 void receive_workers_unsafe(std::span<worker_thread*> workers) {
-
                     // Remove workers if we want to downsize.
                     for (auto worker : workers) {
-
                         // Check that the worker is not the current thread, because then a parent sub_pool owns it.
                         if (worker->is_inside())
                             continue;
@@ -282,7 +258,6 @@ namespace palla {
                     return lend_workers_unsafe(nb_workers);
                 }
                 [[nodiscard]] std::vector<worker_thread*> lend_workers_unsafe(size_t nb_workers) {
-
                     if (nb_workers == 0)
                         return {};
 
@@ -302,7 +277,6 @@ namespace palla {
 
                 // Change the number of workers.
                 void resize_unsafe(size_t nb_workers) {
-
                     // Save the size.
                     if (m_desired_size > 0)
                         m_prev_size = m_desired_size;
@@ -320,15 +294,12 @@ namespace palla {
                 }
 
             public:
-
                 // Public types.
 
                 // A sub pool which holds workers temporarily until it is either destroyed or releases them, after which they return to the main pool.
                 class sub_pool {
                     friend class thread_pool; // So the main pool can access the private constructor.
-
                 private:
-
                     // Private members.
                     std::vector<worker_thread*> m_workers;
                     size_t m_desired_size = 0;
@@ -378,7 +349,6 @@ namespace palla {
                     // Waits for all threads to complete, then returns a vector of R, one for each thread. If the return type is void, we still wait but return nothing.
                     template<class F, class R = std::decay_t<decltype(std::declval<F>()(0))>>
                     auto dispatch_to_reserved(F&& func) {
-
                         assert(is_same_thread()); // sub_thread_pool cannot be shared across threads!
 
                         // Dispatch.
@@ -418,7 +388,6 @@ namespace palla {
                     // Waits for all threads to complete, then returns a vector of R, one for each thread. If the return type is void, we still wait but return nothing.
                     template<class F, class R = std::decay_t<decltype(std::declval<F>()(0))>>
                     auto dispatch_to_at_least_one(F&& func) {
-
                         assert(is_same_thread()); // sub_thread_pool cannot be shared across threads!
 
                         if (!empty()) {
@@ -437,7 +406,6 @@ namespace palla {
                     // Waits for all threads to complete, then returns a vector of R, one for each thread. If the return type is void, we still wait but return nothing.
                     template<class F, class R = std::decay_t<decltype(std::declval<F>()(0))>>
                     auto dispatch_to_all(F&& func) {
-
                         assert(is_same_thread()); // sub_thread_pool cannot be shared across threads!
 
                         if (full()) {
@@ -466,12 +434,10 @@ namespace palla {
                                 return results;
                         }
                     }
-
                 };
 
-
                 // Public functions.
-                // Every function should be thread-safe and recursion-safe, except enable/disable/resize, which are allowed to not be recursive.
+                // Every function should be thread-safe and recursion-safe.
 
                 // Constructor and destructor. By default the pool starts with every logical core on the system.
                 thread_pool() { resize(std::thread::hardware_concurrency()); }
@@ -528,7 +494,6 @@ namespace palla {
 
                 // Returns a sub pool containing up to nb_desired workers.
                 [[nodiscard]] sub_pool reserve(size_t nb_desired) { return sub_pool(nb_desired); }
-
             };
 
 
@@ -536,10 +501,8 @@ namespace palla {
     } // namespace details
 
 
-
     // Exports.
     using details::thread_pool_namespace::thread_pool;
-
 
 
 } // namespace palla

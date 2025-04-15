@@ -43,7 +43,7 @@ static_assert(!std::is_copy_constructible_v<palla::thread_pool::sub_pool> &&
               std::is_move_assignable_v<palla::thread_pool::sub_pool>, 
     "sub_pool should be movable but not copyable.");
 
-
+// An enum representing each dispatch function.
 enum class dispatch_func {
     dispatch_to_reserved,
     dispatch_to_at_least_one,
@@ -52,7 +52,6 @@ enum class dispatch_func {
 
 // Verifies the size of a pool.
 void verify_pool(size_t expected_size, size_t expected_working, bool is_worker) {
-
     auto& pool = palla::thread_pool::get();
 
     if (pool.size() != expected_size)
@@ -71,7 +70,6 @@ void verify_pool(size_t expected_size, size_t expected_working, bool is_worker) 
 
 // Verifies the size of a sub pool and the dispatch functions.
 void verify_sub_pool(palla::thread_pool::sub_pool& sub_pool, size_t desired_size, size_t expected_size) {
-
     // Test the size.
     if (sub_pool.size() != expected_size)
         make_test_fail("Incorrect sub_pool::size().");
@@ -189,7 +187,6 @@ void test_functionality() {
             verify_sub_pool(sub_pool_1, 0, 0);
             verify_sub_pool(sub_pool_2, 0, 0);
             verify_pool(1, 0, false);
-
         }
     }
 
@@ -200,7 +197,6 @@ void test_functionality() {
 
 // Time several threads and ensure we arrive at the expected time.
 void verify_concurrency(size_t nb_threads_in_pool, size_t nb_threads_desired, std::chrono::duration<double> time_to_sleep) {
-
     auto func = [time_to_sleep](int) { std::this_thread::sleep_for(time_to_sleep); };
 
     auto& pool = palla::thread_pool::get();
@@ -251,7 +247,6 @@ void sleep_random_us(int us) {
 
 // Makes various thread_pool calls recursively up to a certain depth.
 void recursive_call(std::chrono::time_point<std::chrono::steady_clock> until, size_t max_depth) {
-
     auto time = std::chrono::steady_clock::now();
     if (time > until || max_depth < 0)
         return;
@@ -299,7 +294,6 @@ void recursive_call(std::chrono::time_point<std::chrono::steady_clock> until, si
 
 // Test that there are no deadlocks.
 void test_deadlocks() {
-
     std::cout << "\nTesting for deadlocks.\n" << colors::yellow;
 
     constexpr size_t TEST_TIME_SECONDS = 10;
@@ -313,12 +307,10 @@ void test_deadlocks() {
         std::cout << "DONE                               \r";
     });
 
-
     recursive_call(start_time + std::chrono::seconds(TEST_TIME_SECONDS), 3);
 
     std::cout << colors::green << "PASS" << colors::white;
 }
-
 
 
 // Main function.
@@ -327,7 +319,6 @@ int main() {
     test_functionality();
     test_concurrency();
     test_deadlocks();
-
 
     std::cout << "\n\nGlobal Result: " << colors::green << "PASS" << colors::white << "\n\n";
 
