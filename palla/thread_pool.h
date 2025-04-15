@@ -115,6 +115,7 @@ namespace palla {
 
 
 
+
             // A thread that runs in an infinite loop until it is destroyed.
             class worker_thread {
 
@@ -372,7 +373,7 @@ namespace palla {
 
                     // Dispatchers.
 
-                    // Dispatches a function func(size_t index) -> R to size() threads, where index is the thread index from 0 to size() - 1, and R is the return value.
+                    // Dispatches a function func(int index) -> R to size() threads, where index is the thread index from 0 to size() - 1, and R is the return value.
                     // Note that if size() == 0, func() will not be called at all.
                     // Waits for all threads to complete, then returns a vector of R, one for each thread. If the return type is void, we still wait but return nothing.
                     template<class F, class R = std::decay_t<decltype(std::declval<F>()(0))>>
@@ -384,7 +385,7 @@ namespace palla {
                         move_only_function<void()> self_func;
                         std::vector<std::future<R>> futures(m_workers.size());
                         for (size_t i = 0; i < size(); i++) {
-                            auto [async_func, future] = make_async_func(func, i);
+                            auto [async_func, future] = make_async_func(func, (int)i);
                             futures[i] = std::move(future);
                             if (m_workers[i]->is_inside()) {
                                 self_func = std::move(async_func);
@@ -445,13 +446,13 @@ namespace palla {
                         }
                         else {
                             // Wrap func inside a loop with a shared index.
-                            std::atomic<size_t> shared_index{};
+                            std::atomic<int> shared_index{};
                             std::conditional_t<std::is_void_v<R>, char, std::vector<R>> results;
                             if constexpr (!std::is_void_v<R>)
                                 results.resize(m_desired_size);
 
                             auto full_func = [&](size_t) {
-                                for (size_t i = shared_index++; i < m_desired_size; i = shared_index++) {
+                                for (int i = shared_index++; i < (int)m_desired_size; i = shared_index++) {
                                     if constexpr (std::is_void_v<R>)
                                         func(i);
                                     else
