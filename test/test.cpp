@@ -316,6 +316,8 @@ void test_deadlocks() {
 // Main function.
 int main() {
 
+    std::cout << colors::white;
+
     test_functionality();
     test_concurrency();
     test_deadlocks();
