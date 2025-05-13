@@ -6,6 +6,10 @@
 
 #include "../header/thread_pool.h"
 
+namespace fake {
+#include "../header/fake_thread_pool.h"
+}
+
 // Console color codes.
 namespace colors {
     static const char* const white =    "\033[0m";
@@ -51,8 +55,8 @@ enum class dispatch_func {
 };
 
 // Verifies the size of a pool.
-void verify_pool(size_t expected_size, size_t expected_working, bool is_worker) {
-    auto& pool = palla::thread_pool::get();
+template<class T>
+void verify_pool(const T& pool, size_t expected_size, size_t expected_working, bool is_worker) {
 
     if (pool.size() != expected_size)
         make_test_fail("Incorrect thread_pool::size().");
@@ -69,7 +73,8 @@ void verify_pool(size_t expected_size, size_t expected_working, bool is_worker) 
 }
 
 // Verifies the size of a sub pool and the dispatch functions.
-void verify_sub_pool(palla::thread_pool::sub_pool& sub_pool, size_t desired_size, size_t expected_size) {
+template<class T>
+void verify_sub_pool(T& sub_pool, size_t desired_size, size_t expected_size) {
     // Test the size.
     if (sub_pool.size() != expected_size)
         make_test_fail("Incorrect sub_pool::size().");
@@ -139,60 +144,79 @@ void test_functionality() {
 
             // Resize to regular_size.
             pool.resize(regular_size);
-            verify_pool(regular_size, 0, false);
+            verify_pool(pool, regular_size, 0, false);
 
             // Create and verify a sub pool.
             auto sub_pool_1 = pool.reserve(desired_size_1);
             verify_sub_pool(sub_pool_1, desired_size_1, sub_pool_1_size);
-            verify_pool(regular_size, sub_pool_1_size, false);
+            verify_pool(pool, regular_size, sub_pool_1_size, false);
 
             // Disable and verify the threads are all removed except those in sub_pool_1.
             pool.disable();
             verify_sub_pool(sub_pool_1, desired_size_1, sub_pool_1_size);
-            verify_pool(sub_pool_1_size, sub_pool_1_size, false);
+            verify_pool(pool, sub_pool_1_size, sub_pool_1_size, false);
 
             // Attempt to create another sub pool when the pool is disabled.
             auto sub_pool_2 = pool.reserve(desired_size_2);
             verify_sub_pool(sub_pool_1, desired_size_1, sub_pool_1_size);
             verify_sub_pool(sub_pool_2, desired_size_2, 0);
-            verify_pool(sub_pool_1_size, sub_pool_1_size, false);
+            verify_pool(pool, sub_pool_1_size, sub_pool_1_size, false);
 
             // Reenable the pool and create another sub pool.
             pool.enable();
             sub_pool_2 = pool.reserve(desired_size_2);
             verify_sub_pool(sub_pool_1, desired_size_1, sub_pool_1_size);
             verify_sub_pool(sub_pool_2, desired_size_2, sub_pool_2_size);
-            verify_pool(regular_size, sub_pool_1_size + sub_pool_2_size, false);
+            verify_pool(pool, regular_size, sub_pool_1_size + sub_pool_2_size, false);
 
             // Disable again.
             pool.disable();
             verify_sub_pool(sub_pool_1, desired_size_1, sub_pool_1_size);
             verify_sub_pool(sub_pool_2, desired_size_2, sub_pool_2_size);
-            verify_pool(sub_pool_1_size + sub_pool_2_size, sub_pool_1_size + sub_pool_2_size, false);
+            verify_pool(pool, sub_pool_1_size + sub_pool_2_size, sub_pool_1_size + sub_pool_2_size, false);
 
             // Release one pool.
             sub_pool_1.release();
             verify_sub_pool(sub_pool_1, 0, 0);
             verify_sub_pool(sub_pool_2, desired_size_2, sub_pool_2_size);
-            verify_pool(sub_pool_2_size, sub_pool_2_size, false);
+            verify_pool(pool, sub_pool_2_size, sub_pool_2_size, false);
 
             // Resize to 1.
             pool.resize(1);
             verify_sub_pool(sub_pool_1, 0, 0);
             verify_sub_pool(sub_pool_2, desired_size_2, sub_pool_2_size);
-            verify_pool(std::max<size_t>(1, sub_pool_2_size), sub_pool_2_size, false);
+            verify_pool(pool, std::max<size_t>(1, sub_pool_2_size), sub_pool_2_size, false);
 
             // Release the other pool.
             sub_pool_2.release();
             verify_sub_pool(sub_pool_1, 0, 0);
             verify_sub_pool(sub_pool_2, 0, 0);
-            verify_pool(1, 0, false);
+            verify_pool(pool, 1, 0, false);
         }
     }
 
     std::cout << colors::green << "PASS              " << colors::white;
 }
 
+
+// Test that functions return the proper values.
+void test_fake_pool() {
+    std::cout << "\nTesting the fake pool.\n" << colors::yellow << "TESTING..." << colors::white << '\r';
+
+    auto& pool = fake::palla::thread_pool::get();
+    verify_pool(pool, 0, 0, false);
+    pool.resize(42);
+    verify_pool(pool, 0, 0, false);
+    pool.enable();
+    verify_pool(pool, 0, 0, false);
+
+    for (size_t desired_size = 0; desired_size < 4; desired_size++) {
+        auto sub_pool = pool.reserve(desired_size);
+        verify_sub_pool(sub_pool, desired_size, 0);
+    }
+
+    std::cout << colors::green << "PASS              " << colors::white;
+}
 
 
 // Time several threads and ensure we arrive at the expected time.
@@ -319,6 +343,7 @@ int main() {
     std::cout << colors::white;
 
     test_functionality();
+    test_fake_pool();
     test_concurrency();
     test_deadlocks();
 
